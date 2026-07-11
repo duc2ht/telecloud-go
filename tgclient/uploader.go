@@ -684,7 +684,7 @@ func ProcessCompleteUpload(ctx context.Context, filePath, filename, path, mimeTy
 	var existingID int
 	var existingThumb *string
 	if overwrite {
-		database.RODB.QueryRow("SELECT id, thumb_path FROM files WHERE path = ? AND filename = ? AND is_folder = 0 AND owner = ?", path, filename, owner).Scan(&existingID, &existingThumb)
+		database.RODB.QueryRow("SELECT id, thumb_path FROM files WHERE path = ? AND filename = ? AND is_folder = FALSE AND owner = ?", path, filename, owner).Scan(&existingID, &existingThumb)
 	}
 
 	// Serialize filename uniqueness check + DB insert to prevent TOCTOU
@@ -696,7 +696,7 @@ func ProcessCompleteUpload(ctx context.Context, filePath, filename, path, mimeTy
 	var dbErr error
 	for i := 0; i < 5; i++ {
 		fileID, dbErr = database.InsertAndGetID(database.DB,
-			"INSERT INTO files (filename, path, size, mime_type, is_folder, owner) VALUES (?, ?, ?, ?, 0, ?)",
+			"INSERT INTO files (filename, path, size, mime_type, is_folder, owner) VALUES (?, ?, ?, ?, FALSE, ?)",
 			uniqueFilename, path, fileSize, mimeType, owner,
 		)
 		if dbErr == nil {
@@ -1008,7 +1008,7 @@ func ProcessRemoteUpload(ctx context.Context, url, path, taskID string, cfg *con
 	var existingID int
 	var existingThumb *string
 	if overwrite {
-		database.RODB.QueryRow("SELECT id, thumb_path FROM files WHERE path = ? AND filename = ? AND is_folder = 0 AND owner = ?", path, filename, owner).Scan(&existingID, &existingThumb)
+		database.RODB.QueryRow("SELECT id, thumb_path FROM files WHERE path = ? AND filename = ? AND is_folder = FALSE AND owner = ?", path, filename, owner).Scan(&existingID, &existingThumb)
 	}
 
 	// Serialize filename uniqueness check + DB insert to prevent TOCTOU races.
@@ -1021,7 +1021,7 @@ func ProcessRemoteUpload(ctx context.Context, url, path, taskID string, cfg *con
 	var dbErr error
 	for i := 0; i < 5; i++ {
 		fileID, dbErr = database.InsertAndGetID(database.DB,
-			"INSERT INTO files (filename, path, size, mime_type, is_folder, owner) VALUES (?, ?, ?, ?, 0, ?)",
+			"INSERT INTO files (filename, path, size, mime_type, is_folder, owner) VALUES (?, ?, ?, ?, FALSE, ?)",
 			uniqueFilename, path, size, mimeType, owner,
 		)
 		if dbErr == nil {
@@ -1275,7 +1275,7 @@ func ProcessCompleteUploadSync(ctx context.Context, filePath, filename, path, mi
 	var existingID int
 	var existingThumb *string
 	if overwrite {
-		database.RODB.QueryRow("SELECT id, thumb_path FROM files WHERE path = ? AND filename = ? AND is_folder = 0 AND owner = ?", path, filename, owner).Scan(&existingID, &existingThumb)
+		database.RODB.QueryRow("SELECT id, thumb_path FROM files WHERE path = ? AND filename = ? AND is_folder = FALSE AND owner = ?", path, filename, owner).Scan(&existingID, &existingThumb)
 	}
 
 	// Serialize filename uniqueness check + DB insert to prevent TOCTOU races.
@@ -1294,7 +1294,7 @@ func ProcessCompleteUploadSync(ctx context.Context, filePath, filename, path, mi
 	var dbErr error
 	for i := 0; i < 5; i++ {
 		fileID, dbErr = database.InsertAndGetID(database.DB,
-			"INSERT INTO files (filename, path, size, mime_type, is_folder, owner) VALUES (?, ?, ?, ?, 0, ?)",
+			"INSERT INTO files (filename, path, size, mime_type, is_folder, owner) VALUES (?, ?, ?, ?, FALSE, ?)",
 			uniqueFilename, path, fileSize, mimeType, owner,
 		)
 		if dbErr == nil {
@@ -1655,7 +1655,7 @@ func ProcessRemoteUploadSync(ctx context.Context, url, path, taskID string, cfg 
 	var existingID int
 	var existingThumb *string
 	if overwrite {
-		database.RODB.QueryRow("SELECT id, thumb_path FROM files WHERE path = ? AND filename = ? AND is_folder = 0 AND owner = ?", path, filename, owner).Scan(&existingID, &existingThumb)
+		database.RODB.QueryRow("SELECT id, thumb_path FROM files WHERE path = ? AND filename = ? AND is_folder = FALSE AND owner = ?", path, filename, owner).Scan(&existingID, &existingThumb)
 	}
 
 	// Serialize filename uniqueness check + DB insert to prevent TOCTOU races.
@@ -1669,7 +1669,7 @@ func ProcessRemoteUploadSync(ctx context.Context, url, path, taskID string, cfg 
 	var dbErr error
 	for i := 0; i < 5; i++ {
 		fileID, dbErr = database.InsertAndGetID(database.DB,
-			"INSERT INTO files (filename, path, size, mime_type, is_folder, owner) VALUES (?, ?, ?, ?, 0, ?)",
+			"INSERT INTO files (filename, path, size, mime_type, is_folder, owner) VALUES (?, ?, ?, ?, FALSE, ?)",
 			uniqueFilename, path, size, mimeType, owner,
 		)
 		if dbErr == nil {
