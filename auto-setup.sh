@@ -491,9 +491,11 @@ cloudflared_setup() {
     # nên KHÔNG thể đọc được file credentials (~/.cloudflared/<id>.json), gây lỗi 1033.
     # Copy file credentials vào $BASE_DIR (thư mục được whitelist qua ReadWritePaths) để service đọc được.
     if [ ! -f "$BASE_DIR/tunnel-credentials.json" ]; then
-        CRED_SRC=$(ls -t "$HOME/.cloudflared/"*.json 2>/dev/null | grep -v "cert.json" | head -n 1)
+        # Không chỉ dựa vào $HOME: cloudflared tự dò nơi có cert.pem để ghi credentials,
+        # trên Linux script chạy bằng root nên luôn ưu tiên kiểm tra /root/.cloudflared/ trước.
+        CRED_SRC=$(find /root/.cloudflared "$HOME/.cloudflared" -maxdepth 1 -name '*.json' ! -name 'cert.json' -printf '%T@ %p\n' 2>/dev/null | sort -rn | head -n 1 | cut -d' ' -f2-)
         if [ -z "$CRED_SRC" ]; then
-            echo "[!] LỖI: Không tìm thấy file credentials của tunnel trong $HOME/.cloudflared/"
+            echo "[!] LỖI: Không tìm thấy file credentials của tunnel trong /root/.cloudflared/ hoặc $HOME/.cloudflared/"
             return 1
         fi
         cp "$CRED_SRC" "$BASE_DIR/tunnel-credentials.json"
@@ -1109,7 +1111,9 @@ manage_tunnel() {
             # Sao chép credentials vào $BASE_DIR (service systemd chạy sandbox DynamicUser+ProtectHome
             # nên không đọc được ~/.cloudflared/*.json trực tiếp -> đây là nguyên nhân gây lỗi 1033)
             if [ "$OS_TYPE" == "linux" ] && [ ! -f "$BASE_DIR/tunnel-credentials.json" ]; then
-                CRED_SRC=$(ls -t "$HOME/.cloudflared/"*.json 2>/dev/null | grep -v "cert.json" | head -n 1)
+                # Không chỉ dựa vào $HOME: cloudflared tự dò nơi có cert.pem để ghi credentials,
+                # trên Linux script chạy bằng root nên luôn ưu tiên kiểm tra /root/.cloudflared/ trước.
+                CRED_SRC=$(find /root/.cloudflared "$HOME/.cloudflared" -maxdepth 1 -name '*.json' ! -name 'cert.json' -printf '%T@ %p\n' 2>/dev/null | sort -rn | head -n 1 | cut -d' ' -f2-)
                 if [ -n "$CRED_SRC" ]; then
                     cp "$CRED_SRC" "$BASE_DIR/tunnel-credentials.json"
                     chmod 600 "$BASE_DIR/tunnel-credentials.json"
