@@ -487,6 +487,20 @@ cloudflared_setup() {
         cloudflared tunnel create "$TUNNEL_NAME" > "$BASE_DIR/tunnel.txt" || return 1
     fi
 
+    # QUAN TRỌNG: Service telecloud-tunnel chạy với DynamicUser=true + ProtectHome=true
+    # nên KHÔNG thể đọc được file credentials (~/.cloudflared/<id>.json), gây lỗi 1033.
+    # Copy file credentials vào $BASE_DIR (thư mục được whitelist qua ReadWritePaths) để service đọc được.
+    if [ ! -f "$BASE_DIR/tunnel-credentials.json" ]; then
+        CRED_SRC=$(ls -t "$HOME/.cloudflared/"*.json 2>/dev/null | grep -v "cert.json" | head -n 1)
+        if [ -z "$CRED_SRC" ]; then
+            echo "[!] LỖI: Không tìm thấy file credentials của tunnel trong $HOME/.cloudflared/"
+            return 1
+        fi
+        cp "$CRED_SRC" "$BASE_DIR/tunnel-credentials.json"
+        chmod 644 "$BASE_DIR/tunnel-credentials.json"
+        echo "[+] Đã sao chép credentials tunnel vào $BASE_DIR/tunnel-credentials.json"
+    fi
+
     read -p "Nhập tên miền của bạn (VD: telecloud.domain.com) hoặc Enter để bỏ qua: " MY_DOMAIN
     if [ ! -z "$MY_DOMAIN" ]; then
         echo "[+] Đang trỏ DNS (Force)..."
@@ -578,7 +592,7 @@ After=network.target
 [Service]
 Type=simple
 DynamicUser=true
-ExecStart=$(command -v cloudflared) tunnel run --url http://localhost:$APP_PORT $TUNNEL_NAME
+ExecStart=$(command -v cloudflared) tunnel --credentials-file $BASE_DIR/tunnel-credentials.json run --url http://localhost:$APP_PORT $TUNNEL_NAME
 Restart=always
 RestartSec=3
 
@@ -589,6 +603,7 @@ ProtectHome=true
 PrivateTmp=true
 RestrictSUIDSGID=true
 LockPersonality=true
+ReadWritePaths=$BASE_DIR
 
 [Install]
 WantedBy=multi-user.target
@@ -1068,6 +1083,19 @@ manage_tunnel() {
                 cloudflared tunnel create "$TUNNEL_NAME" > "$BASE_DIR/tunnel.txt"
             fi
 
+            # Sao chép credentials vào $BASE_DIR (service systemd chạy sandbox DynamicUser+ProtectHome
+            # nên không đọc được ~/.cloudflared/*.json trực tiếp -> đây là nguyên nhân gây lỗi 1033)
+            if [ "$OS_TYPE" == "linux" ] && [ ! -f "$BASE_DIR/tunnel-credentials.json" ]; then
+                CRED_SRC=$(ls -t "$HOME/.cloudflared/"*.json 2>/dev/null | grep -v "cert.json" | head -n 1)
+                if [ -n "$CRED_SRC" ]; then
+                    cp "$CRED_SRC" "$BASE_DIR/tunnel-credentials.json"
+                    chmod 644 "$BASE_DIR/tunnel-credentials.json"
+                    echo "[+] Đã sao chép credentials tunnel vào $BASE_DIR/tunnel-credentials.json"
+                else
+                    echo "[!] CẢNH BÁO: Không tìm thấy file credentials, tunnel có thể không kết nối được (lỗi 1033)."
+                fi
+            fi
+
             read -p "Nhập tên miền muốn trỏ (VD: telecloud.domain.com): " NEW_DOMAIN
             if [ ! -z "$NEW_DOMAIN" ]; then
                 cloudflared tunnel route dns -f "$TUNNEL_NAME" "$NEW_DOMAIN"
@@ -1077,6 +1105,40 @@ manage_tunnel() {
                 else
                     echo "❌ Lỗi khi trỏ DNS."
                 fi
+            fi
+
+            # Tạo (hoặc cập nhật) service telecloud-tunnel nếu chưa có — trường hợp tunnel được
+            # thêm SAU khi cài đặt lần đầu thì trước đây service này không bao giờ được tạo ra.
+            if [ "$OS_TYPE" == "linux" ] && command -v systemctl &>/dev/null; then
+                APP_PORT=$(grep "^PORT=" "$BASE_DIR/.env" 2>/dev/null | cut -d'=' -f2)
+                APP_PORT=${APP_PORT:-8091}
+                cat > /etc/systemd/system/telecloud-tunnel.service <<EOF2
+[Unit]
+Description=Telecloud Cloudflared Tunnel
+After=network.target
+
+[Service]
+Type=simple
+DynamicUser=true
+ExecStart=$(command -v cloudflared) tunnel --credentials-file $BASE_DIR/tunnel-credentials.json run --url http://localhost:$APP_PORT $TUNNEL_NAME
+Restart=always
+RestartSec=3
+
+# Hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+RestrictSUIDSGID=true
+LockPersonality=true
+ReadWritePaths=$BASE_DIR
+
+[Install]
+WantedBy=multi-user.target
+EOF2
+                systemctl daemon-reload
+                systemctl enable --now telecloud-tunnel
+                echo "✅ Đã tạo/cập nhật service telecloud-tunnel và khởi động."
             fi
             ;;
         2)
@@ -1096,6 +1158,7 @@ manage_tunnel() {
             rm -f "$BASE_DIR/tunnel.txt"
             rm -f "$BASE_DIR/domain.txt"
             rm -f "$BASE_DIR/tunnel-name.txt"
+            rm -f "$BASE_DIR/tunnel-credentials.json"
             echo "✅ Đã xoá Tunnel."
             echo "📢 Hãy xoá bản ghi DNS cũ tại dash.cloudflare.com nếu không dùng nữa!"
             ;;
